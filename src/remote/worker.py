@@ -83,6 +83,8 @@ def main(payload):
         return stream_snapshot(payload)
     if payload["action"] == "cleanup":
         return cleanup_snapshot(payload)
+    if payload["action"] == "recover":
+        return recover_snapshot(payload)
     raise RuntimeError("Unknown operation")
 
 if __name__ == "__main__":

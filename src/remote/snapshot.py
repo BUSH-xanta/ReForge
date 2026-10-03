@@ -95,6 +95,8 @@ def resolve_projects(paths):
                         raise RuntimeError("Container bind mount lies outside its project")
                 elif mount["Type"] == "volume":
                     volume = json.loads(run(["docker", "volume", "inspect", mount["Name"]]))[0]
+                    if not (volume.get("Labels") or {}).get("com.docker.compose.volume"):
+                        raise RuntimeError("Anonymous volumes are not supported; declare named Compose volumes")
                     if volume["Driver"] != "local" or volume.get("Options"):
                         raise RuntimeError("Only default local Docker volumes are supported")
                     if volume["Name"] not in captured_volumes:
@@ -162,7 +164,7 @@ def prepare_snapshot(payload):
                 run(["docker", "stop", "-t", "60"] + running, timeout=180)
             for volume in volumes:
                 safe_tree(volume["mountpoint"])
-            with tarfile.open(archive, "w") as tar:
+            with tarfile.open(archive, "w", dereference=True) as tar:
                 data = json.dumps(manifest).encode()
                 member = tarfile.TarInfo("manifest.json")
                 member.size = len(data)

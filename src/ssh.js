@@ -1,3 +1,6 @@
+import { gzipSync } from 'node:zlib';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -7,14 +10,14 @@ export function sshArgs(server) {
     '-i', server.keyPath, '-p', String(server.port), '--', server.user + '@' + server.host];
 }
 export async function remoteSource() {
-  const parts = await Promise.all(['deploy.py', 'snapshot.py', 'worker.py'].map(file => readFile(fileURLToPath(new URL('./remote/' + file, import.meta.url)), 'utf8')));
+  const parts = await Promise.all(['deploy.py', 'snapshot.py', 'recovery.py', 'worker.py'].map(file => readFile(fileURLToPath(new URL('./remote/' + file, import.meta.url)), 'utf8')));
   return parts.join('\n').replace(/^\uFEFF/gm, '');
 }
 export function commandFor(source, payload) {
-  const code = Buffer.from(source).toString('base64');
+  const code = gzipSync(Buffer.from(source)).toString('base64');
   const args = Buffer.from(JSON.stringify(payload)).toString('base64');
   // Base64 uses no shell metacharacters; remote command contains only fixed code and encoded data.
-  return `sudo -n python3 -c 'import base64;exec(compile(base64.b64decode("${code}"),"<reforge>","exec"))' '${args}'`;
+  return `sudo -n python3 -c 'import base64,zlib;exec(compile(zlib.decompress(base64.b64decode("${code}"),31),"<reforge>","exec"))' '${args}'`;
 }
 export async function runRemote(server, payload, options = {}) {
   const source = await remoteSource();
@@ -49,4 +52,22 @@ export async function transferDownload(server, payload, consume) {
   done.catch(() => {});
   child.stdin.end();
   try { await consume(child.stdout); await done; } catch (error) { child.kill(); throw error; } finally { clearTimeout(timer); }
+}
+
+export async function transferUpload(server, payload, source) {
+  const child = spawn('ssh', [...sshArgs(server), commandFor(await remoteSource(), payload)], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk.toString(); if (stdout.length > 1024 * 1024) child.kill(); });
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-1200); });
+  const timer = setTimeout(() => child.kill(), 1800000);
+  const done = new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) reject(new Error('Recovery failed: ' + stderr));
+      else { try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Invalid recovery evidence')); } }
+    });
+  });
+  done.catch(() => {});
+  try { await Promise.all([pipeline(createReadStream(source), child.stdin), done]); return await done; }
+  catch (error) { child.kill(); throw error; } finally { clearTimeout(timer); }
 }

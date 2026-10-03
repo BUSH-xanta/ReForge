@@ -1,12 +1,39 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, unlink } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, unlink, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { InputError, validateProjectPaths, validateHealthChecks } from './validation.js';
-import { runRemote, transferDownload } from './ssh.js';
-import { encryptStream } from './crypto.js';
+import { runRemote, transferDownload, transferUpload } from './ssh.js';
+import { encryptStream, decryptFile } from './crypto.js';
 export function operationsFor(store, config) {
   const backupDir = join(config.dataDir, 'backups');
   return {
+    recover(server, body) {
+      const backup = store.get('backups', body.backupId);
+      if (!backup) throw new InputError('Backup not found', 404);
+      if (server.id === backup.serverId) throw new InputError('Choose a separate recovery target');
+      if (body.confirm !== server.name) throw new InputError('Type the target server name to confirm recovery');
+      if (!backup.healthChecks?.length) throw new InputError('This snapshot has no application health checks; create a new backup with target-local checks');
+      return async event => {
+        const staging = await mkdtemp(join(config.dataDir, 'restore-'));
+        try {
+          const plain = join(staging, 'snapshot.tar');
+          event('Authenticating and decrypting snapshot before contacting target');
+          await decryptFile(join(backupDir, backup.id + '.rfg'), plain, config.key);
+          const hash = createHash('sha256');
+          for await (const chunk of createReadStream(plain)) hash.update(chunk);
+          event('Requiring an empty target distinct from source machine');
+          const evidence = await transferUpload(server, { action: 'recover', backupId: backup.id, sourceMachineId: backup.sourceMachineId, sha256: hash.digest('hex') }, plain);
+          store.put('recoveries', { ...evidence, serverId: server.id });
+          store.put('backups', { ...backup, recoveryStatus: evidence.passed ? 'verified' : 'failed', lastRecoveryAt: evidence.checkedAt });
+          const inventory = await runRemote(server, { action: 'discover' });
+          store.put('servers', { ...server, inventory });
+          if (!evidence.passed) throw new Error('Restored workloads failed health checks; evidence is saved for diagnosis');
+          event('Selected Compose workloads recovered and application checks passed');
+          return evidence;
+        } finally { await rm(staging, { recursive: true, force: true }); }
+      };
+    },
     deploy(server, body) {
       if (body.confirm !== server.name) throw new InputError('Type the server name to confirm Ubuntu provisioning');
       const allowedPorts = body.allowedPorts || [];

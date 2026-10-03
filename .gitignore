@@ -4,3 +4,5 @@ data/
 *.pem
 *.key
 coverage/
+__pycache__/
+*.pyc
