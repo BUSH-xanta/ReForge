@@ -1,0 +1,19 @@
+services:
+  reforge:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REFORGE_HOST: 0.0.0.0
+      REFORGE_PORT: 8787
+      REFORGE_DATA_DIR: /app/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - reforge-data:/app/data
+      - ${SSH_DIRECTORY:?Set SSH_DIRECTORY to an existing SSH directory}:/home/node/.ssh:ro
+    stop_grace_period: 30m
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  reforge-data:

@@ -66,5 +66,14 @@ test('API rejects unauthorized and cross-origin mutations; stores a server', asy
   assert.equal((await fetch(base + '/api/servers', { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   const created = await fetch(base + '/api/servers', { method: 'POST', headers, body: JSON.stringify({ name: 'DE-01', host: '192.0.2.1', keyPath: join(tmpdir(), 'id_ed25519') }) });
   assert.equal(created.status, 201);
+  const server = await created.json();
+  store.put('servers', { ...server, inventory: { projects: [{ path: '/srv/app' }] } });
+  const schedulePath = base + '/api/servers/' + server.id + '/schedule';
+  const policy = { time: '03:00', paths: ['/srv/app'], healthChecks: [] };
+  assert.equal((await fetch(schedulePath, { method: 'POST', headers, body: JSON.stringify(policy) })).status, 400);
+  assert.equal((await fetch(schedulePath, { method: 'POST', headers, body: JSON.stringify({ ...policy, time: '25:00', confirmDowntime: true }) })).status, 400);
+  assert.equal((await fetch(schedulePath, { method: 'POST', headers, body: JSON.stringify({ ...policy, confirmDowntime: true }) })).status, 200);
+  assert.equal((await fetch(schedulePath, { method: 'POST', headers, body: JSON.stringify({ enabled: false }) })).status, 200);
+  assert.equal(store.get('schedules', server.id).enabled, false);
   assert.equal((await (await fetch(base + '/api/state', { headers })).json()).servers.length, 1);
 });

@@ -5,6 +5,7 @@ import os
 import platform
 import subprocess
 import sys
+import signal
 from datetime import datetime, timezone
 
 def run(args, timeout=45, optional=False):
@@ -88,6 +89,10 @@ def main(payload):
     raise RuntimeError("Unknown operation")
 
 if __name__ == "__main__":
+    def interrupted(signum, frame):
+        raise RuntimeError("Remote operation interrupted; attempting cleanup")
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGHUP, interrupted)
     try:
         # sudo normally clears SSH_CONNECTION; pass the sshd-provided value as a quoted argument.
         if len(sys.argv) > 2:
