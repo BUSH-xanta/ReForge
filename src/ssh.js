@@ -6,7 +6,10 @@ export function sshArgs(server) {
     '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
     '-i', server.keyPath, '-p', String(server.port), '--', server.user + '@' + server.host];
 }
-export async function remoteSource() { return readFile(fileURLToPath(new URL('./remote/worker.py', import.meta.url)), 'utf8'); }
+export async function remoteSource() {
+  const parts = await Promise.all(['deploy.py', 'snapshot.py', 'worker.py'].map(file => readFile(fileURLToPath(new URL('./remote/' + file, import.meta.url)), 'utf8')));
+  return parts.join('\n').replace(/^\uFEFF/gm, '');
+}
 export function commandFor(source, payload) {
   const code = Buffer.from(source).toString('base64');
   const args = Buffer.from(JSON.stringify(payload)).toString('base64');
@@ -32,4 +35,18 @@ export async function runRemote(server, payload, options = {}) {
   child.stdin.end();
   const raw = await done;
   try { return JSON.parse(raw.toString()); } catch { throw new Error('Invalid response from remote worker'); }
+}
+
+export async function transferDownload(server, payload, consume) {
+  const child = spawn('ssh', [...sshArgs(server), commandFor(await remoteSource(), payload)], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-1200); });
+  const timer = setTimeout(() => child.kill(), 1800000);
+  const done = new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', code => code === 0 ? resolve() : reject(new Error('Snapshot transfer failed: ' + stderr)));
+  });
+  done.catch(() => {});
+  child.stdin.end();
+  try { await consume(child.stdout); await done; } catch (error) { child.kill(); throw error; } finally { clearTimeout(timer); }
 }

@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { randomBytes } from 'node:crypto';
+import { encryptStream, decryptFile } from '../src/crypto.js';
+test('snapshot encryption round-trip, wrong key and tampering rejection', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'reforge-crypto-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const key = randomBytes(32);
+  const source = Buffer.from('DATABASE_PASSWORD=very-secret\n'.repeat(200));
+  const encrypted = join(dir, 'snapshot.rfg');
+  await encryptStream(Readable.from([source.subarray(0, 7), source.subarray(7)]), encrypted, key);
+  assert.ok(!(await readFile(encrypted)).includes(Buffer.from('very-secret')));
+  const plain = join(dir, 'plain.tar');
+  await decryptFile(encrypted, plain, key);
+  assert.deepEqual(await readFile(plain), source);
+  await assert.rejects(decryptFile(encrypted, join(dir, 'wrong.tar'), randomBytes(32)), /authentication/);
+  const damaged = await readFile(encrypted); damaged[20] ^= 1;
+  await writeFile(join(dir, 'damaged.rfg'), damaged);
+  await assert.rejects(decryptFile(join(dir, 'damaged.rfg'), join(dir, 'bad.tar'), key), /authentication/);
+  await assert.rejects(readFile(join(dir, 'bad.tar')), /ENOENT/);
+});

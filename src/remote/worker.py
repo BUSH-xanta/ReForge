@@ -75,12 +75,22 @@ def inventory():
 def main(payload):
     if payload["action"] == "discover":
         return inventory()
+    if payload["action"] == "deploy":
+        return deploy(payload)
+    if payload["action"] == "prepare":
+        return prepare_snapshot(payload)
+    if payload["action"] == "download":
+        return stream_snapshot(payload)
+    if payload["action"] == "cleanup":
+        return cleanup_snapshot(payload)
     raise RuntimeError("Unknown operation")
 
 if __name__ == "__main__":
     try:
         payload = json.loads(base64.b64decode(sys.argv[1]))
-        print(json.dumps(main(payload)))
+        result = main(payload)
+        if result is not None:
+            print(json.dumps(result))
     except Exception as error:
         # Do not print subprocess output: it may contain credentials.
         print("ReForge: " + str(error), file=sys.stderr)
