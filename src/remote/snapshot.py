@@ -119,17 +119,17 @@ def database_dumps(projects, destination):
     for project in projects:
         for container in project["containers"]:
             image = container["Config"]["Image"].lower()
-            env = dict(v.split("=", 1) for v in container["Config"].get("Env", []) if "=" in v)
             args = None
             engine = None
             if "postgres" in image and container["State"]["Running"]:
                 engine = "postgresql"
-                args = ["docker", "exec", "-e", "PGPASSWORD=" + env.get("POSTGRES_PASSWORD", ""), container["Id"], "pg_dumpall", "--no-password", "-U", env.get("POSTGRES_USER", "postgres")]
+                script = 'if [ -n "$POSTGRES_PASSWORD_FILE" ]; then PGPASSWORD=$(cat "$POSTGRES_PASSWORD_FILE") || exit 1; else PGPASSWORD="$POSTGRES_PASSWORD"; fi; export PGPASSWORD; exec pg_dumpall --no-password -U "${POSTGRES_USER:-postgres}"'
+                args = ["docker", "exec", container["Id"], "sh", "-c", script]
             elif ("mysql" in image or "mariadb" in image) and container["State"]["Running"]:
                 engine = "mysql"
-                password = env.get("MYSQL_ROOT_PASSWORD", env.get("MARIADB_ROOT_PASSWORD", ""))
                 binary = "mariadb-dump" if "mariadb" in image else "mysqldump"
-                args = ["docker", "exec", "-e", "MYSQL_PWD=" + password, container["Id"], binary, "-uroot", "--all-databases", "--single-transaction", "--routines", "--events"]
+                script = 'file="${MYSQL_ROOT_PASSWORD_FILE:-$MARIADB_ROOT_PASSWORD_FILE}"; if [ -n "$file" ]; then MYSQL_PWD=$(cat "$file") || exit 1; else MYSQL_PWD="${MYSQL_ROOT_PASSWORD:-$MARIADB_ROOT_PASSWORD}"; fi; export MYSQL_PWD; exec ' + binary + ' -uroot --all-databases --single-transaction --routines --events'
+                args = ["docker", "exec", container["Id"], "sh", "-c", script]
             if args:
                 filename = container["Id"][:12] + ".sql"
                 with open(destination / filename, "wb") as stream:

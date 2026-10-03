@@ -6,5 +6,7 @@ export function config(env = process.env) {
   if (!/^[a-f0-9]{64}$/i.test(key)) throw new Error('REFORGE_BACKUP_KEY must be 64 hex characters');
   const port = Number(env.REFORGE_PORT || 8787);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid REFORGE_PORT');
-  return { token, key: Buffer.from(key, 'hex'), host: env.REFORGE_HOST || '127.0.0.1', port, dataDir: resolve(env.REFORGE_DATA_DIR || 'data') };
+  const timezone = env.REFORGE_TIMEZONE || 'Europe/Moscow';
+  new Intl.DateTimeFormat('en', { timeZone: timezone }).format(new Date());
+  return { token, key: Buffer.from(key, 'hex'), host: env.REFORGE_HOST || '127.0.0.1', port, timezone, dataDir: resolve(env.REFORGE_DATA_DIR || 'data') };
 }

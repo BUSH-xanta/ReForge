@@ -1,11 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, unlink, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, unlink, mkdtemp, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { InputError, validateProjectPaths, validateHealthChecks } from './validation.js';
 import { runRemote, transferDownload, transferUpload } from './ssh.js';
 import { encryptStream, decryptFile } from './crypto.js';
-export function operationsFor(store, config) {
+export function operationsFor(store, config, storage = { put: async () => ({ type: 'local' }) }) {
   const backupDir = join(config.dataDir, 'backups');
   return {
     recover(server, body) {
@@ -18,8 +18,17 @@ export function operationsFor(store, config) {
         const staging = await mkdtemp(join(config.dataDir, 'restore-'));
         try {
           const plain = join(staging, 'snapshot.tar');
+          const encrypted = join(backupDir, backup.id + '.rfg');
+          try { await stat(encrypted); }
+          catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+            event('Retrieving encrypted snapshot from external storage');
+            if (!storage.get) throw new Error('Local snapshot is missing and external storage is not configured');
+            await mkdir(backupDir, { recursive: true, mode: 0o700 });
+            await storage.get(backup.id, encrypted, backup.storage);
+          }
           event('Authenticating and decrypting snapshot before contacting target');
-          await decryptFile(join(backupDir, backup.id + '.rfg'), plain, config.key);
+          await decryptFile(encrypted, plain, config.key);
           const hash = createHash('sha256');
           for await (const chunk of createReadStream(plain)) hash.update(chunk);
           event('Requiring an empty target distinct from source machine');
@@ -56,24 +65,29 @@ export function operationsFor(store, config) {
         const backupId = randomUUID();
         await mkdir(backupDir, { recursive: true, mode: 0o700 });
         const destination = join(backupDir, backupId + '.rfg');
-        let remotePrepared = false;
         try {
           event('Validating Compose coverage and creating database dumps');
           event('Source containers will stop briefly while project files and volumes are captured');
           const summary = await runRemote(server, { action: 'prepare', backupId, paths, healthChecks }, { timeout: 1800000 });
-          remotePrepared = true;
           event('Source services restarted. Downloading and encrypting snapshot');
           await transferDownload(server, { action: 'download', backupId }, input => encryptStream(input, destination, config.key));
-          const backup = store.put('backups', { id: backupId, serverId: server.id, ...summary, file: backupId + '.rfg', status: 'created', recoveryStatus: 'untested' });
+          let backup = store.put('backups', { id: backupId, serverId: server.id, ...summary, file: backupId + '.rfg', status: 'created', recoveryStatus: 'untested' });
+          try {
+            event('Copying encrypted snapshot to configured storage');
+            backup = store.put('backups', { ...backup, storage: await storage.put(backupId, destination), replicationStatus: 'succeeded' });
+          } catch {
+            store.put('backups', { ...backup, replicationStatus: 'failed' });
+            event('External storage copy failed; encrypted local snapshot is retained');
+            throw new Error('Backup saved locally but external replication failed');
+          }
           event('Encrypted snapshot saved; recovery remains untested');
           return { backupId: backup.id, bytes: summary.bytes };
         } catch (error) {
-          await unlink(destination).catch(() => {});
+          if (!store.get('backups', backupId)) await unlink(destination).catch(() => {});
           throw error;
         } finally {
-          if (remotePrepared) {
-            try { await runRemote(server, { action: 'cleanup', backupId }); } catch { event('Remote plaintext snapshot cleanup failed; remove /var/lib/reforge/' + backupId + '.tar manually'); }
-          }
+          try { await runRemote(server, { action: 'cleanup', backupId }); }
+          catch { event('Remote plaintext snapshot cleanup could not be confirmed; inspect /var/lib/reforge/' + backupId + '.tar'); }
         }
       };
     }

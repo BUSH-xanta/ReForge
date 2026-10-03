@@ -17,7 +17,7 @@ export function commandFor(source, payload) {
   const code = gzipSync(Buffer.from(source)).toString('base64');
   const args = Buffer.from(JSON.stringify(payload)).toString('base64');
   // Base64 uses no shell metacharacters; remote command contains only fixed code and encoded data.
-  return `sudo -n python3 -c 'import base64,zlib;exec(compile(zlib.decompress(base64.b64decode("${code}"),31),"<reforge>","exec"))' '${args}'`;
+  return `sudo -n python3 -c 'import base64,zlib;exec(compile(zlib.decompress(base64.b64decode("${code}"),31),"<reforge>","exec"))' '${args}' "$SSH_CONNECTION"`;
 }
 export async function runRemote(server, payload, options = {}) {
   const source = await remoteSource();

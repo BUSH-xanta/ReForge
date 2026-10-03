@@ -22,4 +22,8 @@ test('snapshot encryption round-trip, wrong key and tampering rejection', async 
   await writeFile(join(dir, 'damaged.rfg'), damaged);
   await assert.rejects(decryptFile(join(dir, 'damaged.rfg'), join(dir, 'bad.tar'), key), /authentication/);
   await assert.rejects(readFile(join(dir, 'bad.tar')), /ENOENT/);
+  await assert.rejects(encryptStream(Readable.from([source]), encrypted, key), /EEXIST/);
+  assert.ok((await readFile(encrypted)).length > 32);
+  await assert.rejects(decryptFile(encrypted, plain, key), /EEXIST/);
+  assert.deepEqual(await readFile(plain), source);
 });

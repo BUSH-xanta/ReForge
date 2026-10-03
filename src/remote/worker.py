@@ -89,6 +89,9 @@ def main(payload):
 
 if __name__ == "__main__":
     try:
+        # sudo normally clears SSH_CONNECTION; pass the sshd-provided value as a quoted argument.
+        if len(sys.argv) > 2:
+            os.environ["SSH_CONNECTION"] = sys.argv[2]
         payload = json.loads(base64.b64decode(sys.argv[1]))
         result = main(payload)
         if result is not None:

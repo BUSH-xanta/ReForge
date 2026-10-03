@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { InputError, validateServer } from './validation.js';
+import { InputError, validateServer, validateProjectPaths, validateHealthChecks } from './validation.js';
 import { runRemote } from './ssh.js';
 const assets = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
 export function createApp({ store, jobs, config, operations = {} }) {
@@ -31,17 +31,26 @@ export function createApp({ store, jobs, config, operations = {} }) {
         const parts = []; let length = 0;
         for await (const part of request) { length += part.length; if (length > 65536) throw new InputError('Request body too large', 413); parts.push(part); }
         try { body = JSON.parse(Buffer.concat(parts).toString() || '{}'); } catch { throw new InputError('Invalid JSON'); }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new InputError('JSON body must be an object');
       }
-      if (url.pathname === '/api/state' && method === 'GET') return json(response, 200, { servers: store.list('servers'), backups: store.list('backups'), jobs: store.list('jobs').slice(0, 100), recoveries: store.list('recoveries'), busy: jobs.active });
+      if (url.pathname === '/api/state' && method === 'GET') return json(response, 200, { servers: store.list('servers'), backups: store.list('backups'), jobs: store.list('jobs').slice(0, 100), recoveries: store.list('recoveries'), schedules: store.list('schedules'), timezone: config.timezone || 'Europe/Moscow', busy: jobs.active });
       if (url.pathname === '/api/servers' && method === 'POST') {
         const server = store.put('servers', { ...validateServer(body), createdAt: new Date().toISOString(), inventory: null });
         return json(response, 201, server);
       }
-      const route = url.pathname.match(/^\/api\/servers\/([a-zA-Z0-9-]+)\/(discover|deploy|backup|recover)$/);
+      const route = url.pathname.match(/^\/api\/servers\/([a-zA-Z0-9-]+)\/(discover|deploy|backup|recover|schedule)$/);
       if (route && method === 'POST') {
         const server = store.get('servers', route[1]);
         if (!server) throw new InputError('Server not found', 404);
         const action = route[2];
+        if (action === 'schedule') {
+          const current = store.get('schedules', server.id);
+          if (body.enabled === false) return json(response, 200, store.put('schedules', { ...(current || {}), id: server.id, serverId: server.id, enabled: false }));
+          if (body.confirmDowntime !== true || !server.inventory) throw new InputError('Discover the server and confirm downtime before scheduling');
+          if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time || '')) throw new InputError('Daily time must use HH:mm');
+          const policy = store.put('schedules', { id: server.id, serverId: server.id, enabled: true, time: body.time, paths: validateProjectPaths(body.paths), healthChecks: validateHealthChecks(body.healthChecks || []), lastDate: current?.lastDate });
+          return json(response, 200, policy);
+        }
         let operation;
         if (action === 'discover') operation = async event => {
           event('Connecting with strict SSH host-key verification');

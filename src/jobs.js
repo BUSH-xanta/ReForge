@@ -16,8 +16,8 @@ export class Jobs {
       } catch (error) {
         update({ status: 'failed', error: error.message, endedAt: new Date().toISOString() });
       } finally {
-        this.active = false;
         try { await this.notify(this.store.get('jobs', job.id)); } catch { event('Telegram notification failed; operation result is unchanged'); }
+        this.active = false;
       }
     });
     return job;

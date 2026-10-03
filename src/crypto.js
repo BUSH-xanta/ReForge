@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import { open, stat, unlink } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
@@ -9,7 +9,9 @@ export async function encryptStream(input, destination, key) {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
   cipher.setAAD(MAGIC);
-  const output = createWriteStream(destination, { flags: 'wx', mode: 0o600 });
+  // Exclusive creation happens before cleanup ownership, so an existing snapshot is never deleted.
+  const destinationHandle = await open(destination, 'wx', 0o600);
+  const output = destinationHandle.createWriteStream();
   output.write(Buffer.concat([MAGIC, nonce]));
   let bytes = 0;
   const counter = new Transform({ transform(chunk, encoding, callback) {
@@ -31,7 +33,8 @@ export async function decryptFile(source, destination, key) {
   if (!header.subarray(0, 4).equals(MAGIC)) throw new Error('Invalid snapshot format');
   const decipher = createDecipheriv('aes-256-gcm', key, header.subarray(4));
   decipher.setAAD(MAGIC); decipher.setAuthTag(tag);
+  const destinationHandle = await open(destination, 'wx', 0o600);
   try {
-    await pipeline(createReadStream(source, { start: 16, end: info.size - 17 }), decipher, createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+    await pipeline(createReadStream(source, { start: 16, end: info.size - 17 }), decipher, destinationHandle.createWriteStream());
   } catch (error) { await unlink(destination).catch(() => {}); throw new Error('Snapshot authentication failed; key is incorrect or backup was modified'); }
 }
