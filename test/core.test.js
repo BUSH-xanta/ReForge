@@ -55,6 +55,12 @@ test('API rejects unauthorized and cross-origin mutations; stores a server', asy
   const base = 'http://127.0.0.1:' + app.address().port;
   assert.equal((await fetch(base + '/api/state')).status, 401);
   assert.equal((await fetch(base + '/healthz')).status, 200);
+  const page = await fetch(base + '/');
+  assert.equal(page.status, 200);
+  assert.ok((await page.text()).includes('Recovery overview'));
+  assert.equal((await fetch(base + '/style.css')).status, 200);
+  assert.equal((await fetch(base + '/app.js')).status, 200);
+  assert.equal((await fetch(base + '/.env')).status, 404);
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
   assert.equal((await fetch(base + '/api/servers', { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   const created = await fetch(base + '/api/servers', { method: 'POST', headers, body: JSON.stringify({ name: 'DE-01', host: '192.0.2.1', keyPath: join(tmpdir(), 'id_ed25519') }) });

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ReForge · Recovery control plane</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+<a class="brand" href="/"><span class="brand-icon">R<span>↗</span></span><span>ReForge<small>RECOVERY CONTROL PLANE</small></span></a>
+<div class="workspace"><span class="dot"></span> Personal infrastructure <span class="muted">⌄</span></div>
+<p class="nav-caption">WORKSPACE</p>
+<nav aria-label="Основная навигация">
+<button data-view="overview" class="active"><span>◫</span> Overview</button>
+<button data-view="servers"><span>▤</span> Servers <b id="nav-count">0</b></button>
+<button data-view="backups"><span>◈</span> Backups</button>
+<button data-view="recovery"><span>↻</span> Recovery tests</button>
+<button data-view="activity"><span>≋</span> Activity</button>
+</nav>
+<div class="sidebar-bottom"><div class="local-badge"><span class="dot"></span> Self-hosted · v0.1</div><p>Evidence over assumptions.</p><button id="signout" class="ghost">↪ Выйти</button></div>
+</aside>
+<main>
+<header class="topbar"><span><span class="muted">Workspace</span> <span class="separator">/</span> <span id="breadcrumb">Overview</span></span><span class="topbar-right"><span class="dot"></span> <span id="connection">Control plane</span></span></header>
+<div class="content">
+<div class="page-heading"><div><p class="eyebrow">YOUR INFRASTRUCTURE, REFORGED</p><h1 id="page-title">Recovery overview</h1><p id="page-description">Знай, что работает. Докажи, что восстановится.</p></div><button id="add-server" class="primary">＋ Подключить сервер</button></div>
+<div id="message" role="status" hidden></div>
+<section id="metrics" class="metrics" aria-label="Состояние инфраструктуры"></section>
+<section class="workflow" aria-label="Этапы ReForge"><span><b>01</b> DEPLOY <small>Подготовить</small></span><i>→</i><span><b>02</b> DISCOVER <small>Изучить</small></span><i>→</i><span><b>03</b> PROTECT <small>Сохранить</small></span><i>→</i><span><b>04</b> RECOVER <small>Проверить</small></span></section>
+<section id="view"></section>
+<footer>ReForge <span>•</span> Recovery means running services and passing checks.<span class="footer-right">Все даты — локальное время браузера</span></footer>
+</div>
+</main>
+</div>
+<dialog id="login">
+<form id="login-form">
+<div class="dialog-heading"><div class="brand-icon">R<span>↗</span></div><p class="eyebrow">WELCOME TO REFORGE</p><h2>Твоя инфраструктура.<br>Под твоим контролем.</h2></div>
+<p class="muted">Введи owner token из локального .env. Он хранится только на время сессии вкладки.</p>
+<label>Owner token<input id="owner-token" name="token" type="password" minlength="32" required autocomplete="off" placeholder="REFORGE_TOKEN"></label>
+<p id="login-error" class="error" role="alert"></p><button class="primary full" type="submit">Открыть control plane →</button>
+</form>
+</dialog>
+<dialog id="modal"><div class="modal-title"><h2 id="modal-heading"></h2><button id="close-modal" class="icon-button" aria-label="Закрыть">×</button></div><div id="modal-content"></div></dialog>
+<script type="module" src="/app.js"></script>
+</body></html>
