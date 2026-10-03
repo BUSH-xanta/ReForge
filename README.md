@@ -1,52 +1,85 @@
-# ReForge
+# 🔥 ReForge
 
-A self-hosted control plane for small VPS infrastructure.
+**Твоя VPS-инфраструктура — с проверяемым восстановлением.**
 
-**Deploy → Discover → Protect → Recover**
+ReForge — self-hosted панель управления небольшой VPS-инфраструктурой. Подключи сервер по SSH, изучи его сервисы, создай зашифрованный backup и проверь восстановление на отдельном VPS.
 
-A backup is not a recovery guarantee. ReForge records evidence from a separate target: restored containers, Docker healthchecks and application HTTP checks, tied to the exact snapshot.
+🌐 **Русский** · [English](README.en.md)
 
-![ReForge dashboard](docs/screenshots/dashboard.png)
+![Панель ReForge](docs/screenshots/dashboard.png)
 
-## Run locally
+## 💡 Главная идея
 
-Requires Node.js 24+ and an OpenSSH client. No npm dependencies.
+Сообщение «backup успешно создан» ещё не доказывает, что сервисы можно восстановить.
+
+ReForge сохраняет результаты реального восстановления: какие контейнеры запустились, прошли ли Docker healthcheck и отвечают ли приложения на HTTP-запросы. Каждая проверка привязана к конкретному backup и целевому серверу.
+
+**🚀 DEPLOY → 🔎 DISCOVER → 🛡️ PROTECT → ♻️ RECOVER**
+
+## 🧰 Что реализовано
+
+| Направление | Возможности |
+|---|---|
+| 🚀 **DEPLOY** | Установка Docker/Compose, SSH-доступ только по ключу, UFW, fail2ban, BBR при поддержке ядра и проверка нового SSH-подключения |
+| 🔎 **DISCOVER** | Инвентаризация Ubuntu, Docker/Compose-проектов, контейнеров, named volumes, портов и доменных меток; обнаружение PostgreSQL/MySQL |
+| 🛡️ **PROTECT** | Согласованные cold snapshots volumes, файлы проектов и `.env`, дампы БД, фиксация образов по digest и шифрование AES-256-GCM |
+| ☁️ **STORAGE** | Локальное хранение, зашифрованные копии в S3/SFTP и загрузка внешней копии при отсутствии локального файла |
+| ♻️ **RECOVER** | Проверка отдельного пустого сервера, аутентификация архива, безопасная распаковка, восстановление Compose/volumes и сохранение результатов healthcheck |
+| 🎛️ **CONTROL** | Web-панель, API с owner token, история заданий в SQLite, ежедневные backup по выбранному расписанию и Telegram-уведомления |
+
+Проверка охватывает **выбранные Docker Compose-проекты**. Панель показывает фактический статус проверки и измеренное время восстановления. Проценты готовности и прогнозы времени не выдумываются.
+
+## ⚡ Быстрый запуск
+
+На машине ReForge нужны **Node.js 24+** и клиент **OpenSSH**. Дополнительных npm-зависимостей нет.
 
 ```sh
+git clone https://github.com/BUSH-xanta/ReForge.git
+cd ReForge
 npm run setup
 npm start
 ```
 
-Open **http://127.0.0.1:8787** and use the owner token from the generated .env. Setup generates separate authentication and encryption keys and never overwrites an existing configuration.
+Открой **http://127.0.0.1:8787** и введи `REFORGE_TOKEN` из созданного `.env`.
 
-Save the encryption key securely. SSH private keys remain on the control-plane host; the registry stores their paths. Independently verify each server fingerprint and add it to your known_hosts.
+Команда setup создаёт независимые ключи для авторизации и шифрования. Существующий `.env` она не перезаписывает.
 
-Remote servers need Python 3 and root/passwordless sudo. Automatic provisioning currently supports **Ubuntu 24.04**.
+На удалённых серверах нужны **Python 3** и доступ **root** либо **sudo без пароля**. Автоматическая настройка сейчас поддерживает **Ubuntu 24.04**.
 
-## Implemented
+## 🗺️ Первый recovery test
 
-| Direction | Initial implementation |
+1. 🔑 Проверь SSH fingerprint сервера независимо и добавь его в `known_hosts`.
+2. 🔌 Подключи исходный VPS, указав путь к SSH-ключу на машине ReForge.
+3. 🔎 Запусти **Discover** и выбери Compose-проекты для backup.
+4. 🛡️ Укажи HTTP-healthcheck целевого localhost и подтверди краткую остановку выбранных сервисов для cold snapshot.
+5. ♻️ Подключи отдельный пустой Ubuntu VPS с Docker/Compose и запусти **Test Recovery**.
+6. ✅ Изучи результаты в **Recovery tests** и журнал в **Activity**.
+
+Восстановленные сервисы остаются на целевом VPS после проверки.
+
+## 🔐 Ключи и данные
+
+- SSH-ключи остаются на машине ReForge; реестр хранит только пути к ним.
+- Сохрани `REFORGE_BACKUP_KEY` отдельно: без него архивы не расшифровать.
+- Сохраняй реестр SQLite вместе с ключом шифрования отдельно от внешних архивов.
+- Полный recovery manifest находится внутри зашифрованного архива и содержит чувствительную Compose-конфигурацию.
+- Для удалённого доступа к панели используй SSH-туннель или HTTPS reverse proxy.
+
+## 📦 Текущие границы
+
+Поддерживаются обычные local named volumes и файлы внутри выбранного проекта. Внешние bind mounts, external volumes/networks, anonymous volumes, симлинки, специальные файлы и неопубликованные локальные образы отклоняются.
+
+Host-сервисы, DNS и внешние managed databases не восстанавливаются.
+
+| Ограничение | Значение |
 |---|---|
-| DEPLOY | Docker/Compose, SSH key-only access, UFW, fail2ban, optional BBR; new SSH connection check |
-| DISCOVER | Ubuntu inventory, Docker/Compose projects, containers, named volumes, ports, domain labels, PostgreSQL/MySQL detection |
-| PROTECT | Consistent cold volume snapshots, project files and .env, database dumps, image digest pins, AES-256-GCM encryption |
-| STORAGE | Local archives, S3 or SFTP encrypted mirrors, remote retrieval when a local snapshot is missing |
-| RECOVER | Distinct empty-target enforcement, authenticated archive, safe extraction, Compose/volume restore, healthcheck evidence |
-| CONTROL | Web dashboard, owner-token API, SQLite jobs/events, explicit daily backup schedules and Telegram notifications |
+| Локальные / SFTP-архивы | До 20 GiB |
+| S3 single-object upload | До 5 GiB |
+| Процессы control plane для одного реестра | Один |
+| Автоматическое удаление старых backup | Пока не реализовано |
+| Создание и удаление VPS для recovery test | Выполняет оператор |
 
-The initial recovery scope is **selected Docker Compose projects**. Cold snapshots briefly stop selected services; the UI requires acknowledgement. Recovery tests need a separate empty target, which remains running afterward.
-
-No readiness percentage or estimated recovery duration is fabricated. The UI shows the actual test status and measured duration.
-
-## Limits
-
-Initial snapshots support default local named volumes and project-local files. External bind mounts, external volumes/networks, anonymous volumes, symlinks/special files and unpublished local images are rejected. Host services, DNS and external managed databases are not restored.
-
-Local/SFTP archives are limited to 20 GiB; the initial S3 implementation supports single-object uploads up to 5 GiB. No automatic retention deletion or disposable-VPS lifecycle is implemented. Only one control-plane process may use a registry.
-
-Preserve the registry and encryption key separately from the external archives. The full manifest lives inside the encrypted tar and contains sensitive rendered Compose configuration.
-
-## Validation
+## 🧪 Проверки и статус
 
 ```sh
 npm test
@@ -54,8 +87,10 @@ npm run check
 python -m unittest discover -s test -p 'test_*.py'
 ```
 
-Node/Python tests cover API authentication, persistence, job concurrency, scheduling, encryption/tampering, the AWS signing example, unsafe archive rejection, source-target refusal, and source restart after snapshot failure. CI also builds the Docker image.
+Тесты покрывают авторизацию API, сохранение данных, запрет параллельных операций, расписание, шифрование и повреждение архивов, пример подписи AWS, безопасную распаковку, отказ от восстановления на исходный сервер и перезапуск сервисов после ошибки snapshot. CI также настроен на сборку Docker-образа.
 
-The dashboard is checked locally. A real source VPS → separate recovery target run, live S3/SFTP transfer and Telegram delivery still need infrastructure credentials. This is an initial implementation; production recovery has not yet been demonstrated.
+**🚧 Это начальная реализация.** Панель проверена локально. Полный цикл на двух реальных VPS, live S3/SFTP-передача и Telegram-доставка ещё требуют интеграционного прогона с инфраструктурой. Восстановление production пока не доказано.
 
-See [the operator guide](docs/operations.md) for deployment, storage settings, coverage and recovery details.
+## 📚 Документация
+
+[Инструкция оператора на английском](docs/operations.md) — настройка, Docker-запуск, хранение, расписание, ограничения и восстановление.
